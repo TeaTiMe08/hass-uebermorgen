@@ -1,211 +1,249 @@
 {% macro uebermorgen(entity_id) -%}
   {% set raw = states(entity_id) %}
 
+  {# Accepted:
+     2026-09-26
+     2026-09-26T14:30
+     2026-09-26T14:30:00
+     2026-09-26 14:30:00
+     2026-09-26T14:30:00+02:00
+     2026-09-26T12:30:00Z
+  #}
+
+  {% set date_pattern =
+  '^\\d{4}-(0[1-9]|1[0-2])-([0-2]\\d|3[01])\\Z'
+  %}
+
+  {% set datetime_pattern =
+    '^\\d{4}-(0[1-9]|1[0-2])-([0-2]\\d|3[01])'
+    ~ '[T ]([01]\\d|2[0-3]):[0-5]\\d'
+    ~ '(:[0-5]\\d(\\.\\d+)?)?'
+    ~ '(Z|[+-]([01]\\d|2[0-3]):[0-5]\\d)?\\Z'
+  %}
+
+  {% set is_date = raw | regex_match(date_pattern) %}
+  {% set is_datetime = raw | regex_match(datetime_pattern) %}
+
   {% if raw in ['unknown', 'unavailable', 'none', ''] %}
     unbekannt
+
+  {% elif not is_date and not is_datetime %}
+    falsches_format
+    
+  {% elif raw in ['unknown', 'unavailable', 'none', ''] %}
+    unbekannt
+
   {% else %}
-    {% set target = as_datetime(raw) | as_local %}
-    {% set today = now().date() %}
-    {% set target_date = target.date() %}
-    {% set days = (target_date - today).days %}
-    {% set abs_days = days | abs %}
+    {% set parsed = as_datetime(raw) %}
 
-    {% set weekdays = [
-      'Montag',
-      'Dienstag',
-      'Mittwoch',
-      'Donnerstag',
-      'Freitag',
-      'Samstag',
-      'Sonntag'
-    ] %}
-
-    {% set weekday = weekdays[target.weekday()] %}
-
-    {% set current_week_start =
-      today - timedelta(days=now().weekday())
-    %}
-
-    {% set target_week_start =
-      target_date - timedelta(days=target.weekday())
-    %}
-
-    {% set week_diff =
-      ((target_week_start - current_week_start).days / 7) | int
-    %}
-
-
-    {# -------------------------------------------- #}
-    {# Helper: Zahlen als deutsche Wörter           #}
-    {# -------------------------------------------- #}
-
-    {% set numbers = {
-      1: 'eine',
-      2: 'zwei',
-      3: 'drei',
-      4: 'vier',
-      5: 'fünf',
-      6: 'sechs',
-      7: 'sieben',
-      8: 'acht',
-      9: 'neun',
-      10: 'zehn',
-      11: 'elf',
-      12: 'zwölf',
-      13: 'dreizehn',
-      14: 'vierzehn',
-      15: 'fünfzehn',
-      16: 'sechzehn',
-      17: 'siebzehn',
-      18: 'achtzehn',
-      19: 'neunzehn',
-      20: 'zwanzig'
-    } %}
-
-
-    {# -------------------------------------------- #}
-    {# Exakte nahe Zeitangaben                      #}
-    {# -------------------------------------------- #}
-
-    {% if days >= -2 and days <= 2 %}
-      {% set has_time = 'T' in raw or ' ' in raw %}
-
-      {% if days == -2 %}
-        {% set day_label = 'vorgestern' %}
-      {% elif days == -1 %}
-        {% set day_label = 'gestern' %}
-      {% elif days == 0 %}
-        {% set day_label = 'heute' %}
-      {% elif days == 1 %}
-        {% set day_label = 'morgen' %}
-      {% elif days == 2 %}
-        {% set day_label = 'übermorgen' %}
-      {% endif %}
-
-      {% if not has_time %}
-        {{ day_label }}
-
-      {% else %}
-        {% set minutes_ago = (as_timestamp(now()) - as_timestamp(target)) / 60 %}
-        {% set target_time = target.hour * 100 + target.minute %}
-
-        {% if days == 0 and 0 <= minutes_ago <= 10 %}
-          gerade eben
-
-        {% elif target_time < 1000 %}
-          {{ day_label }} Morgen
-
-        {% elif target_time < 1200 %}
-          {{ day_label }} Vormittag
-
-        {% elif target_time < 1430 %}
-          {{ day_label }} Mittag
-
-        {% elif target_time < 1700 %}
-          {{ day_label }} Nachmittag
-
-        {% elif target_time < 2200 %}
-          {{ day_label }} Abend
-
-        {% else %}
-          {{ day_label }} Nacht
-        {% endif %}
-      {% endif %}
-
-    {# -------------------------------------------- #}
-    {# Mehr als 18 Monate -> Jahre                  #}
-    {# -------------------------------------------- #}
-
-    {% elif abs_days > 548 %}
-      {% set years = (abs_days / 365.25) | round(0) | int %}
-
-      {% if years == 1 %}
-        {% if days < 0 %}
-          vor einem Jahr
-        {% else %}
-          in einem Jahr
-        {% endif %}
-      {% else %}
-        {% set number = numbers.get(years, years) %}
-
-        {% if days < 0 %}
-          vor {{ number }} Jahren
-        {% else %}
-          in {{ number }} Jahren
-        {% endif %}
-      {% endif %}
-
-
-    {# -------------------------------------------- #}
-    {# Mehr als 6 Wochen -> Monate                  #}
-    {# -------------------------------------------- #}
-
-    {% elif abs_days > 42 %}
-      {% set months = (abs_days / 30.44) | round(0) | int %}
-
-      {% if months == 1 %}
-        {% if days < 0 %}
-          vor einem Monat
-        {% else %}
-          in einem Monat
-        {% endif %}
-      {% else %}
-        {% set number = numbers.get(months, months) %}
-
-        {% if days < 0 %}
-          vor {{ number }} Monaten
-        {% else %}
-          in {{ number }} Monaten
-        {% endif %}
-      {% endif %}
-
-
-    {# -------------------------------------------- #}
-    {# Ab 14 Tagen -> Wochen                        #}
-    {# -------------------------------------------- #}
-
-    {% elif abs_days >= 14 %}
-      {% set weeks = (abs_days / 7) | round(0) | int %}
-      {% set number = numbers.get(weeks, weeks) %}
-
-      {% if days < 0 %}
-        vor {{ number }} Wochen
-      {% else %}
-        in {{ number }} Wochen
-      {% endif %}
-
-
-    {# -------------------------------------------- #}
-    {# Nahe Vergangenheit nach Wochentag            #}
-    {# -------------------------------------------- #}
-
-    {% elif week_diff == -2 %}
-      vorletzten {{ weekday }}
-
-    {% elif week_diff == -1 %}
-      letzten {{ weekday }}
-
-
-    {# -------------------------------------------- #}
-    {# Nahe Zukunft nach Wochentag                  #}
-    {# -------------------------------------------- #}
-
-    {% elif week_diff == 0 %}
-      diesen {{ weekday }}
-
-    {% elif week_diff == 1 %}
-      nächsten {{ weekday }}
-
-    {% elif week_diff == 2 %}
-      übernächsten {{ weekday }}
-
-
-    {# -------------------------------------------- #}
-    {# Fallback                                     #}
-    {# -------------------------------------------- #}
+    {% if parsed is none %}
+      falsches_format
 
     {% else %}
-      {{ weekday }}, {{ target.strftime('%d.%m.%Y') }}
+      {% set target = parsed | as_local %}
+      {% set today = now().date() %}
+      {% set target_date = target.date() %}
+      {% set days = (target_date - today).days %}
+      {% set abs_days = days | abs %}
+
+      {% set weekdays = [
+        'Montag',
+        'Dienstag',
+        'Mittwoch',
+        'Donnerstag',
+        'Freitag',
+        'Samstag',
+        'Sonntag'
+      ] %}
+
+      {% set weekday = weekdays[target.weekday()] %}
+
+      {% set current_week_start =
+        today - timedelta(days=now().weekday())
+      %}
+
+      {% set target_week_start =
+        target_date - timedelta(days=target.weekday())
+      %}
+
+      {% set week_diff =
+        ((target_week_start - current_week_start).days / 7) | int
+      %}
+
+
+      {# -------------------------------------------- #}
+      {# Helper: Zahlen als deutsche Wörter           #}
+      {# -------------------------------------------- #}
+
+      {% set numbers = {
+        1: 'eine',
+        2: 'zwei',
+        3: 'drei',
+        4: 'vier',
+        5: 'fünf',
+        6: 'sechs',
+        7: 'sieben',
+        8: 'acht',
+        9: 'neun',
+        10: 'zehn',
+        11: 'elf',
+        12: 'zwölf',
+        13: 'dreizehn',
+        14: 'vierzehn',
+        15: 'fünfzehn',
+        16: 'sechzehn',
+        17: 'siebzehn',
+        18: 'achtzehn',
+        19: 'neunzehn',
+        20: 'zwanzig'
+      } %}
+
+
+      {# -------------------------------------------- #}
+      {# Exakte nahe Zeitangaben                      #}
+      {# -------------------------------------------- #}
+
+      {% if days >= -2 and days <= 2 %}
+        {% set has_time = 'T' in raw or ' ' in raw %}
+
+        {% if days == -2 %}
+          {% set day_label = 'vorgestern' %}
+        {% elif days == -1 %}
+          {% set day_label = 'gestern' %}
+        {% elif days == 0 %}
+          {% set day_label = 'heute' %}
+        {% elif days == 1 %}
+          {% set day_label = 'morgen' %}
+        {% elif days == 2 %}
+          {% set day_label = 'übermorgen' %}
+        {% endif %}
+
+        {% if not has_time %}
+          {{ day_label }}
+
+        {% else %}
+          {% set minutes_ago = (as_timestamp(now()) - as_timestamp(target)) / 60 %}
+          {% set target_time = target.hour * 100 + target.minute %}
+
+          {% if days == 0 and 0 <= minutes_ago <= 10 %}
+            gerade eben
+
+          {% elif target_time < 1000 %}
+            {{ day_label }} Morgen
+
+          {% elif target_time < 1200 %}
+            {{ day_label }} Vormittag
+
+          {% elif target_time < 1430 %}
+            {{ day_label }} Mittag
+
+          {% elif target_time < 1700 %}
+            {{ day_label }} Nachmittag
+
+          {% elif target_time < 2200 %}
+            {{ day_label }} Abend
+
+          {% else %}
+            {{ day_label }} Nacht
+          {% endif %}
+        {% endif %}
+
+      {# -------------------------------------------- #}
+      {# Mehr als 18 Monate -> Jahre                  #}
+      {# -------------------------------------------- #}
+
+      {% elif abs_days > 548 %}
+        {% set years = (abs_days / 365.25) | round(0) | int %}
+
+        {% if years == 1 %}
+          {% if days < 0 %}
+            vor einem Jahr
+          {% else %}
+            in einem Jahr
+          {% endif %}
+        {% else %}
+          {% set number = numbers.get(years, years) %}
+
+          {% if days < 0 %}
+            vor {{ number }} Jahren
+          {% else %}
+            in {{ number }} Jahren
+          {% endif %}
+        {% endif %}
+
+
+      {# -------------------------------------------- #}
+      {# Mehr als 6 Wochen -> Monate                  #}
+      {# -------------------------------------------- #}
+
+      {% elif abs_days > 42 %}
+        {% set months = (abs_days / 30.44) | round(0) | int %}
+
+        {% if months == 1 %}
+          {% if days < 0 %}
+            vor einem Monat
+          {% else %}
+            in einem Monat
+          {% endif %}
+        {% else %}
+          {% set number = numbers.get(months, months) %}
+
+          {% if days < 0 %}
+            vor {{ number }} Monaten
+          {% else %}
+            in {{ number }} Monaten
+          {% endif %}
+        {% endif %}
+
+
+      {# -------------------------------------------- #}
+      {# Ab 14 Tagen -> Wochen                        #}
+      {# -------------------------------------------- #}
+
+      {% elif abs_days >= 14 %}
+        {% set weeks = (abs_days / 7) | round(0) | int %}
+        {% set number = numbers.get(weeks, weeks) %}
+
+        {% if days < 0 %}
+          vor {{ number }} Wochen
+        {% else %}
+          in {{ number }} Wochen
+        {% endif %}
+
+
+      {# -------------------------------------------- #}
+      {# Nahe Vergangenheit nach Wochentag            #}
+      {# -------------------------------------------- #}
+
+      {% elif week_diff == -2 %}
+        vorletzten {{ weekday }}
+
+      {% elif week_diff == -1 %}
+        letzten {{ weekday }}
+
+
+      {# -------------------------------------------- #}
+      {# Nahe Zukunft nach Wochentag                  #}
+      {# -------------------------------------------- #}
+
+      {% elif week_diff == 0 %}
+        diesen {{ weekday }}
+
+      {% elif week_diff == 1 %}
+        nächsten {{ weekday }}
+
+      {% elif week_diff == 2 %}
+        übernächsten {{ weekday }}
+
+
+      {# -------------------------------------------- #}
+      {# Fallback                                     #}
+      {# -------------------------------------------- #}
+
+      {% else %}
+        {{ weekday }}, {{ target.strftime('%d.%m.%Y') }}
+      {% endif %}
+
     {% endif %}
 
   {% endif %}

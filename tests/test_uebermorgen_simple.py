@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import re
 
 import pytest
 from jinja2 import Environment, FileSystemLoader
@@ -13,6 +14,9 @@ env = Environment(
 )
 
 env.filters["as_local"] = lambda value: value
+env.filters["regex_match"] = lambda value, pattern: (
+    re.match(pattern, value or "") is not None
+)
 
 template = env.get_template("uebermorgen.jinja")
 

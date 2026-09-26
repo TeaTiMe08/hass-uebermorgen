@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from pathlib import Path
+import re
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -48,6 +49,9 @@ env = Environment(
 
 # Home Assistant filter used by the template
 env.filters["as_local"] = as_local
+env.filters["regex_match"] = lambda value, pattern: (
+    re.match(pattern, value or "") is not None
+)
 
 template = env.get_template("uebermorgen.jinja")
 
