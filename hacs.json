@@ -1,4 +1,6 @@
 {
   "name": "German Relative Date",
-  "country": ["DE"]
+  "country": ["DE"],
+  "content_in_root": true,
+  "filename": "uebermorgen.jinja"
 }
